@@ -2,7 +2,7 @@
 Display controle based on https://github.com/adafruit/Adafruit_SSD1306/blob/master/examples/ssd1306_128x64_i2c/ssd1306_128x64_i2c.ino
  **************************************************************************/
 
-#include <SPI.h>
+#include <SPI.h> //help
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -20,7 +20,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 
 int menuButton = 0; // 0=none, 1=edit Temperatur, 2=edit Luftfeuchtigkeit 
-int presetTempreture = 20;
+int presetTempreture = 26;
 int presetHumidity   = 90;
 float tempreture     = 0;
 
