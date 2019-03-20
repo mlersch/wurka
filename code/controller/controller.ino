@@ -2,31 +2,81 @@
 Display controle based on https://github.com/adafruit/Adafruit_SSD1306/blob/master/examples/ssd1306_128x64_i2c/ssd1306_128x64_i2c.ino
  **************************************************************************/
 
-#include <SPI.h> //help
+#include <SPI.h> 
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <DHT.h>
 
-#define PIN_MENU_SELCET_BUTTON 12 // Taster an Pin 12
-#define PIN_MENU_UP_BUTTON 11 // Taster an Pin 11
-#define PIN_MENU_DOWN_BUTTON 10 // Taster an Pin 10
-#define PIN_DUMMY_TEMP 2
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 64 // OLED display height, in pixels
-#define ALARM_BLINK_SPEED 20
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-#define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+#include <Fonts/FreeSansBold12pt7b.h>
+#include <Fonts/FreeSans12pt7b.h>
+#include <Fonts/FreeSansBold9pt7b.h>
+#include <Fonts/FreeSans9pt7b.h>
+
+// Lagecy code for Menu controle
+// TODO: Remove when new controle device arrives.
+#define PIN_MENU_SELCET_BUTTON  12 // Taster an Pin 12
+#define PIN_MENU_UP_BUTTON      11 // Taster an Pin 11
+#define PIN_MENU_DOWN_BUTTON    10 // Taster an Pin 10
+#define PIN_DUMMY_TEMP          2
 
 
-int menuButton = 0; // 0=none, 1=edit Temperatur, 2=edit Luftfeuchtigkeit 
-int presetTempreture = 26;
-int presetHumidity   = 90;
-float tempreture     = 0;
+// Settings for OLED Screen
+#define SCREEN_WIDTH      128 // OLED display width, in pixels
+#define SCREEN_HEIGHT     64 // OLED display height, in pixels
+#define SCREEN_RESET_PIN  4 // SDA PIN of OLED
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, SCREEN_RESET_PIN);
+
+// Settings for Temperatur and humidity sensor
+#define DHTPIN 7 
+#define DHTTYPE DHT22 //DHT11, DHT21, DHT22
+DHT dht(DHTPIN, DHTTYPE);
+
+// Menu codes
+// TODO: Implement
+#define MENU_MODE_OPERATION 0
+#define MENU_MODE_EDIT_TARGET_TEMPERATURE 1
+#define MENU_MODE_EDIT_TARGET_HUMIDITY 2
+#define MENU_MODE_EDIT_VENTILATION_DURATION 3
+#define MENU_MODE_EDIT_VENTILATION_INTERVAL 4
+
+
+// Define min and max values for each parameter 
+// for the selection menu.
+#define MENU_TEMPERATURE_MIN 5 // °C
+#define MENU_TEMPERATURE_MAX 90 // °C
+#define MENU_HUMIDITY_MIN 1 // %
+#define MENU_HUMIDITY_MAX 99 // %
+#define MENU_VENTILATION_DURATION_MIN 1 // Seconds
+#define MENU_VENTILATION_DURATION_MAX  9999 // Seconds
+#define MENU_VENTILATION_INTERVAL_MIN  1 // Minutes
+#define MENU_VENTILATION_INTERVAL_MAX  2000 // Minutes
+
+
+// Alarm tolerance
+// How Lng a value could be beond the setting (in minutes) befor a alarm is triggered.
+// TODO... TÜR-ALARM AUS DEM KELLER einbauen (Gäste WC?).
+#define TIME_TO_ALARM_IN_IMUTES 5
+
+
+
+// Define default presets for bootup
+// TODO: Check how to read/write from EEPROM so after reset
+// the defined vaues are still present.
+int menuButton = MENU_MODE_OPERATION;
+int presetTempreture           = 0;
+int presetHumidity             = 0;
+int presetVentilationDuration  = 90; // A Value in seconds, how long the ventilator should run.
+int presetVentilationInterval  = 90; // The pause time betwene each ventilation run in minutes.
+
+// Initial mesurement values (should be corrected during setup by the sensores)
+float tempreture   = 0;
+float humidity     = 0;
+
 
 void setup() {
   Serial.begin(9600);
-pinMode(9, OUTPUT);//ventilator
+  pinMode(9, OUTPUT);//ventilator
   pinMode(PIN_MENU_SELCET_BUTTON, INPUT_PULLUP);      // Pin, an dem der Taster angeschlossen ist, als Eingang mit aktiviertem Pull-Up-Widerstand festlegen.
   pinMode(PIN_MENU_UP_BUTTON, INPUT_PULLUP);
   pinMode(PIN_MENU_DOWN_BUTTON, INPUT_PULLUP);
@@ -41,11 +91,25 @@ pinMode(9, OUTPUT);//ventilator
   displayLogo();
   displayMesurment();    // Draw 'stylized' characters
   
+  // Temp and humidity sensor init
+  dht.begin();
 
 }
 
 void loop() {
-  tempreture = 35.0 / 1023.0 * analogRead(PIN_DUMMY_TEMP);
+  //tempreture = 35.0 / 1023.0 * analogRead(PIN_DUMMY_TEMP);
+
+  float h = dht.readHumidity(); //Luftfeuchte auslesen
+  float t = dht.readTemperature(); //Temperatur auslesen
+  
+  // Prüfen ob eine gültige Zahl zurückgegeben wird. Wenn NaN (not a number) zurückgegeben wird, dann Fehler ausgeben.
+  if (!isnan(t) && !isnan(h)) 
+  {
+    tempreture = (int)t;
+    humidity = (int)h;
+  }else{
+    Serial.println("DHT22 konnte nicht ausgelesen werden");
+  }
 
   if (digitalRead(PIN_MENU_SELCET_BUTTON) == LOW) {
     Serial.println(F("BUTTON MENU SELECT"));
@@ -99,21 +163,13 @@ void loop() {
 
 
 void displayLogo(void) {
+  display.setFont();
   display.clearDisplay();
   display.setTextColor(WHITE);        // Draw white text
-  display.setTextSize(2);
-  display.setCursor(10,5);
-  display.println(F("Lersch"));
+  display.setTextSize(3);
+  display.setCursor(16,21);
+  display.println(F("WURKA"));
   display.display();
-  delay(500);
-  display.setCursor(20,25);
-  display.println(F("Climate"));
-  display.display();
-  delay(500);
-  display.setCursor(30,45);
-  display.println(F("Control"));
-  display.display();
-  delay(500);
   display.setCursor(90,0);
   display.setTextSize(1);
   display.println(F("v1.00"));
@@ -123,46 +179,65 @@ void displayLogo(void) {
 
 void displayMesurment(void) {
   display.clearDisplay();
-  display.cp437(true);
+  // display.cp437(true);
 
   int16_t grad=248;
 
-  display.setTextSize(1);             // Normal 1:1 pixel scale
+  display.setFont();
   display.setTextColor(WHITE);        // Draw white text
   
-   display.setCursor(5,0);
+  display.setCursor(5,0);
   display.println(F("soll"));
 
-  display.setCursor(70,0);
+  display.setCursor(60,0);
   display.println(F("ist"));
 
+  display.setFont(&FreeSans12pt7b);
 
-  display.setTextSize(3.0);
 // Temperatur
-  display.setCursor(5,15);
+  display.setCursor(5,32);
   if(menuButton == 1){
-    display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+    display.setTextColor(BLACK); // Draw 'inverse' text
+    display.fillRect(0, 14, 50, 21, WHITE);
   }
   display.print(presetTempreture);
-  display.write(grad);
+  display.setFont(&FreeSans9pt7b);  
+  display.print("c");
 
+  display.setFont(&FreeSansBold12pt7b);
   display.setTextColor(WHITE);
-  display.setCursor(70,15);
+  if((int)tempreture != presetTempreture){
+    display.setCursor(110,32);
+    display.print("!");
+  }
+  display.setCursor(60,32);
   display.print((int)tempreture);
-  display.write(grad);
+  // display.setFont(&FreeSans9pt7b);  
+  display.setFont(&FreeSans9pt7b);  
+  display.print("c");
 
 
 // Luftfeuchtigkeit
-  display.setCursor(5,42);
+  display.setFont(&FreeSans12pt7b);
+  display.setCursor(5,59);
   if(menuButton == 2){
-    display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+    display.setTextColor(BLACK); // Draw 'inverse' text
+    display.fillRect(0, 41, 50, 21, WHITE);
   }
   display.print(presetHumidity);
+  display.setFont(&FreeSans9pt7b);  
   display.print("%");
   
+  display.setFont(&FreeSansBold12pt7b);
   display.setTextColor(WHITE);
-  display.setCursor(70,42);
-  display.print(F("92%"));
+  if((int)humidity != presetHumidity){
+    display.setCursor(110,59);
+    display.print("!");
+  }
+  display.setCursor(60,59);
+  display.print((int)humidity);
+  display.setFont(&FreeSans9pt7b);  
+  display.print("%");
   
   
   display.display();
