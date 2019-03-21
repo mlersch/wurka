@@ -29,19 +29,15 @@ DHT dht(DHTPIN, DHTTYPE);
 
 
 // Menu controler
-// DT and CLK must be connected to interrupt pins for good performance (D2&D3 on UNO) 
-#define MENU_CLK_PIN 2  
-#define MENU_DT_PIN  3  
-#define MENU_SW_PIN  4     
-#define MENU_ROTARY_SENSITIVITY 2
-#define MENU_ROTARY_STEP_DEVIDER 4
+#define MENU_CLK_PIN 6
+#define MENU_DT_PIN  5
+#define MENU_SW_PIN  3     
 long MENU_ROTARY_OLD = -999;  
 Encoder menuEncoder(MENU_DT_PIN, MENU_CLK_PIN);
 
 // Menu codes
+// TODO: Implement
 #define MENU_MAX_ITEMS 2
-#define MENU_CHANGE_UP 1
-#define MENU_CHANGE_DOWN 2
 #define MENU_MODE_OPERATION 0
 #define MENU_MODE_EDIT_TARGET_TEMPERATURE 1
 #define MENU_MODE_EDIT_TARGET_HUMIDITY 2
@@ -104,7 +100,8 @@ void setup() {
 }
 
 void loop() {
-  long newRotaryPos = menuEncoder.read()/MENU_ROTARY_STEP_DEVIDER;
+  long newRotaryPos = menuEncoder.read();
+
 
   float h = dht.readHumidity(); //Luftfeuchte auslesen
   float t = dht.readTemperature(); //Temperatur auslesen
@@ -120,23 +117,16 @@ void loop() {
 
 
   if(digitalRead(MENU_SW_PIN) == LOW){
+    Serial.println(F("BUTTON MENU SELECT"));
     if(MENU_SELECTED_ITEM++ == MENU_MAX_ITEMS){
       MENU_SELECTED_ITEM=0;
-    }   
-    delay(200);
-    MENU_ROTARY_OLD = menuEncoder.read()/MENU_ROTARY_STEP_DEVIDER;
+    }
+    delay(500);
   }
   
-  int change = 0;
-  if(MENU_SELECTED_ITEM != 0){
-   
-    if(newRotaryPos - MENU_ROTARY_SENSITIVITY >= MENU_ROTARY_OLD){
-      change = MENU_CHANGE_UP;
-    }else if(newRotaryPos + MENU_ROTARY_SENSITIVITY <= MENU_ROTARY_OLD){
-      change = MENU_CHANGE_DOWN;
-    }
 
-    if (change == MENU_CHANGE_UP) {
+  if(MENU_SELECTED_ITEM != 0){
+    if (newRotaryPos > MENU_ROTARY_OLD) {
       if(MENU_SELECTED_ITEM == MENU_MODE_EDIT_TARGET_TEMPERATURE){
         if( presetTempreture++ >= MENU_TEMPERATURE_MAX){
           presetTempreture = MENU_TEMPERATURE_MAX;   
@@ -147,7 +137,10 @@ void loop() {
           presetHumidity = MENU_HUMIDITY_MAX;   
         }
       }
-    }else if (change == MENU_CHANGE_DOWN) {
+     delay(200);
+    }
+
+    if (newRotaryPos < MENU_ROTARY_OLD) {
       if(MENU_SELECTED_ITEM == MENU_MODE_EDIT_TARGET_TEMPERATURE){
         if( presetTempreture-- <= MENU_TEMPERATURE_MIN){
           presetTempreture = MENU_TEMPERATURE_MIN;   
@@ -158,15 +151,17 @@ void loop() {
           presetHumidity = MENU_HUMIDITY_MIN;   
         }
       }
+      delay(200);
     }
     
   }
-  
-  if(change != 0){
+
+  if(newRotaryPos != MENU_ROTARY_OLD){
     MENU_ROTARY_OLD = newRotaryPos;
+      Serial.println(newRotaryPos);
   }
-  displayMesurment();
   
+  displayMesurment();
 }
 
 
@@ -193,32 +188,22 @@ void displayMesurment(void) {
 
   int16_t grad=248;
 
-  int colPosition[] = {};
-  colPosition[0] = 5;
-  colPosition[1] = 60;
-  colPosition[2] = 110;
-
-  int rowPosition[] = {};
-  rowPosition[0] = 0;
-  rowPosition[1] = 32;
-  rowPosition[2] = 59;
-
   display.setFont();
   display.setTextColor(WHITE);        // Draw white text
   
-  display.setCursor(5, rowPosition[0]);
+  display.setCursor(5,0);
   display.println(F("soll"));
 
-  display.setCursor(60, rowPosition[0]);
+  display.setCursor(60,0);
   display.println(F("ist"));
 
   display.setFont(&FreeSans12pt7b);
 
 // Temperatur
-  display.setCursor(colPosition[0], rowPosition[1]);
+  display.setCursor(5,32);
   if(MENU_SELECTED_ITEM == 1){
     display.setTextColor(BLACK); // Draw 'inverse' text
-    display.fillRect(0, rowPosition[1]-18, 50, 21, WHITE);
+    display.fillRect(0, 14, 50, 21, WHITE);
   }
   display.print(presetTempreture);
   display.setFont(&FreeSans9pt7b);  
@@ -227,10 +212,10 @@ void displayMesurment(void) {
   display.setFont(&FreeSansBold12pt7b);
   display.setTextColor(WHITE);
   if((int)tempreture != presetTempreture){
-    display.setCursor(colPosition[2], rowPosition[1]);
+    display.setCursor(110,32);
     display.print("!");
   }
-  display.setCursor(colPosition[1], rowPosition[1]);
+  display.setCursor(60,32);
   display.print((int)tempreture);
   // display.setFont(&FreeSans9pt7b);  
   display.setFont(&FreeSans9pt7b);  
@@ -239,10 +224,10 @@ void displayMesurment(void) {
 
 // Luftfeuchtigkeit
   display.setFont(&FreeSans12pt7b);
-  display.setCursor(colPosition[0], rowPosition[2]);
+  display.setCursor(5,59);
   if(MENU_SELECTED_ITEM == 2){
     display.setTextColor(BLACK); // Draw 'inverse' text
-    display.fillRect(0, rowPosition[2]-18, 50, 21, WHITE);
+    display.fillRect(0, 41, 50, 21, WHITE);
   }
   display.print(presetHumidity);
   display.setFont(&FreeSans9pt7b);  
@@ -251,10 +236,10 @@ void displayMesurment(void) {
   display.setFont(&FreeSansBold12pt7b);
   display.setTextColor(WHITE);
   if((int)humidity != presetHumidity){
-    display.setCursor(colPosition[2], rowPosition[2]);
+    display.setCursor(110,59);
     display.print("!");
   }
-  display.setCursor(colPosition[1], rowPosition[2]);
+  display.setCursor(60,59);
   display.print((int)humidity);
   display.setFont(&FreeSans9pt7b);  
   display.print("%");
