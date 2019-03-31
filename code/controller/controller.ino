@@ -68,25 +68,39 @@ Encoder menuEncoder(MENU_DT_PIN, MENU_CLK_PIN);
 
 
 // Define device controle pins
-#define DEVICE_HEATER_PIN 5
-#define DEVICE_DIFFUSER_PIN 6
-#define DEVICE_FAN_PIN 8
+#define DEVICE_HEATER_PIN 9
+#define DEVICE_DIFFUSER_POWER_PIN 11
+#define DEVICE_DIFFUSER_CONTROLE_PIN 13
+#define DEVICE_FAN_PIN 12
+#define DEVICE_ALARM_PIN 6
 
 
 // Define default presets for bootup
 // TODO: Check how to read/write from EEPROM so after reset
 // the defined vaues are still present.
 int MENU_SELECTED_ITEM         = MENU_MODE_OPERATION;
-int presetTempreture           = MENU_TEMPERATURE_MIN;
-int presetHumidity             = MENU_HUMIDITY_MIN;
+int presetTempreture           = 20; //MENU_TEMPERATURE_MIN;
+int presetHumidity             = 90; //MENU_HUMIDITY_MIN;ong unsigned int 
 int presetVentilationDuration  = MENU_VENTILATION_DURATION_MIN; // A Value in seconds, how long the ventilator should run.
 int presetVentilationInterval  = MENU_VENTILATION_INTERVAL_MAX; // The pause time betwene each ventilation run in minutes.
+
+bool lowTempreature = false;
+bool highTempreature = false;
+unsigned long alarmTempreature = 0;
+
+bool lowHumidity = false;
+bool highHumidity = false;
+bool operatingHumidity = false;
+unsigned long alarmHumidity = 0;
+
+unsigned long alarmError = 0;
+
 
 // Initial mesurement values (should be corrected during setup by the sensores)
 float tempreture   = 0;
 float humidity     = 0;
 
-int now = 0;
+unsigned long now = 0;
 
 void setup() {
   Serial.begin(9600);
@@ -98,15 +112,25 @@ void setup() {
   digitalWrite(DEVICE_HEATER_PIN, HIGH);
   pinMode(DEVICE_HEATER_PIN, OUTPUT);  
 
-  digitalWrite(DEVICE_DIFFUSER_PIN, HIGH);
-  pinMode(DEVICE_DIFFUSER_PIN, OUTPUT);  
+  digitalWrite(DEVICE_DIFFUSER_POWER_PIN, HIGH);
+  pinMode(DEVICE_DIFFUSER_POWER_PIN, OUTPUT);  
 
+  digitalWrite(DEVICE_DIFFUSER_CONTROLE_PIN, LOW);
+  pinMode(DEVICE_DIFFUSER_CONTROLE_PIN, OUTPUT);  
+
+  digitalWrite(DEVICE_FAN_PIN, LOW);
   pinMode(DEVICE_FAN_PIN, OUTPUT);  
+
+  digitalWrite(DEVICE_ALARM_PIN, LOW);
+  pinMode(DEVICE_ALARM_PIN, OUTPUT);  
 
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x64
+    alarmError = now;
     Serial.println(F("SSD1306 allocation failed"));
     for(;;); // Don't proceed, loop forever
+  }else{
+    alarmError = 0;
   }
   // Clear the buffer
   display.clearDisplay();
@@ -119,31 +143,111 @@ void setup() {
 }
 
 void loop() {
-  now = (int)millis()/1000;
+  now = millis();
   
   long newRotaryPos = menuEncoder.read()/MENU_ROTARY_STEP_DEVIDER;
 
 
 
   float h = dht.readHumidity(); //Luftfeuchte auslesen
-  float t = dht.readTemperature(); //Temperatur auslesen
+  float t = dht.readTemperature(); //Tempong unsigned int eratur auslesen
   
   // Prüfen ob eine gültige Zahl zurückgegeben wird. Wenn NaN (not a number) zurückgegeben wird, dann Fehler ausgeben.
   if (!isnan(t) && !isnan(h)) 
   {
     tempreture = (int)t;
     humidity = (int)h;
+    alarmError = 0;
   }else{
+    if(alarmError == 0){
+      alarmError = now;
+    }
     Serial.println("DHT22 konnte nicht ausgelesen werden");
   }
 
-  if(tempreture < presetTempreture){
+  // Heitzung anschalten, wenn die temperatur zu niedrig ist
+  if((int)tempreture < (int)presetTempreture){
     digitalWrite(DEVICE_HEATER_PIN, LOW);
+    lowTempreature = true;
+    highTempreature = false;
+    if(alarmTempreature == 0){
+      alarmTempreature = now;
+    }
+  }else if((int)tempreture > (int)presetTempreture){
+    lowTempreature = false;
+    highTempreature = true;
+    if(alarmTempreature == 0){
+      alarmTempreature = now;
+    }
   }else{
+    alarmTempreature = 0;
+    lowTempreature = false;
+    highTempreature = false;
     digitalWrite(DEVICE_HEATER_PIN, HIGH);
   }
 
+  // Luftbefeuchter einschalten wenn zu trocken.
+  if((int)humidity < (int)presetHumidity){
+    lowHumidity = true;
+    highHumidity = false;
+    if(alarmHumidity == 0){
+      alarmHumidity = now;
+    }
+    if(!operatingHumidity){
+      digitalWrite(DEVICE_DIFFUSER_POWER_PIN, LOW);
+/*      Serial.println("LBF AN");
+      Serial.println(alarmHumidity);
+      Serial.println(now);
+      Serial.println(now - alarmHumidity);
+      Serial.println(now >= alarmHumidity + 500);
+      Serial.println(now <= alarmHumidity + 1500); */
+      // Eine halbe Sekunde warten nach dem einschalten, bevor wir starten.
+      // taste für 1 sekunde drücken.
+      if(now >= alarmHumidity + 500 && now <= alarmHumidity + 1500){
+        digitalWrite(DEVICE_DIFFUSER_CONTROLE_PIN, LOW);
+      }else if(now >= alarmHumidity + 1500){
+        digitalWrite(DEVICE_DIFFUSER_CONTROLE_PIN, HIGH);
+        operatingHumidity = true;
+      }
+    }
+    
+  } else if ((int)humidity > (int)presetHumidity && !operatingHumidity){
+    digitalWrite(DEVICE_DIFFUSER_CONTROLE_PIN, LOW);
+    lowHumidity = false;
+    highHumidity = true;
+    operatingHumidity = false;
+    if(alarmHumidity == 0){
+      alarmHumidity = now;
+    } 
+  }else{
+    lowHumidity = false;
+    highHumidity = false;
+    operatingHumidity = false;
+    alarmHumidity=0;
+    digitalWrite(DEVICE_DIFFUSER_POWER_PIN, HIGH);
+  }
 
+  // Wenn Luftfeuchtigkeit oder Temperatur zu hoch,
+  // dann lüfter einschalten.
+  if(lowTempreature || lowHumidity){
+    digitalWrite(DEVICE_FAN_PIN, HIGH);
+  }else{
+    digitalWrite(DEVICE_FAN_PIN, LOW);
+  }
+
+//TIME_TO_ALARM_IN_IMUTES
+    if(
+         ( now - alarmHumidity <= 900000 && now - alarmHumidity >= 300000  && alarmHumidity != 0)
+      || ( now - alarmTempreature <= 900000 && now - alarmTempreature >= 300000  && alarmTempreature != 0)
+      || ( now - alarmError <= 900000 && now - alarmError >= 300000  && alarmError != 0)
+    ){
+  digitalWrite(DEVICE_ALARM_PIN, HIGH);
+}else{
+  digitalWrite(DEVICE_ALARM_PIN, LOW);
+}
+
+
+  // MENÜ-Steuerung
   if(digitalRead(MENU_SW_PIN) == LOW){
     if(MENU_SELECTED_ITEM++ == MENU_MAX_ITEMS){
       MENU_SELECTED_ITEM=0;
